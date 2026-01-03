@@ -1,8 +1,14 @@
 [[contracts]]
-fqn = "casper_usd::mock_stcspr::MockStCSPR"
+fqn = "casper_usd::oracle::PriceOracle"
 
 [[contracts]]
 fqn = "casper_usd::stablecoin::CasperUSD"
 
 [[contracts]]
-fqn = "casper_usd::vault::Vault"
+fqn = "casper_usd::trove_manager::TroveManager"
+
+[[contracts]]
+fqn = "casper_usd::stability_pool::StabilityPool"
+
+[[contracts]]
+fqn = "casper_usd::stcspr::StCSPR"

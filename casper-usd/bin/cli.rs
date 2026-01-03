@@ -1,78 +1,61 @@
-//! This example demonstrates how to use the `odra-cli` tool to deploy and interact with a smart contract.
+//! CLI tool for CasperUSD smart contracts
 
-use casper_usd::flipper::Flipper;
+use casper_usd::stcspr::StCSPR;
+use casper_usd::stablecoin::CasperUSD;
+use casper_usd::oracle::PriceOracle;
+use casper_usd::trove_manager::TroveManager;
+use casper_usd::stability_pool::StabilityPool;
 use odra::host::{HostEnv, NoArgs};
-use odra::schema::casper_contract_schema::NamedCLType;
 use odra_cli::{
     deploy::DeployScript,
-    scenario::{Args, Error, Scenario, ScenarioMetadata},
-    CommandArg, ContractProvider, DeployedContractsContainer, DeployerExt,
+    ContractProvider, DeployedContractsContainer, DeployerExt,
     OdraCli, 
 };
 
-/// Deploys the `Flipper` and adds it to the container.
-pub struct FlipperDeployScript;
+/// Deploys all CasperUSD contracts
+pub struct CasperUSDDeployScript;
 
-impl DeployScript for FlipperDeployScript {
+impl DeployScript for CasperUSDDeployScript {
     fn deploy(
         &self,
         env: &HostEnv,
         container: &mut DeployedContractsContainer
     ) -> Result<(), odra_cli::deploy::Error> {
-        let _flipper = Flipper::load_or_deploy(
+        // Deploy stCSPR token
+        let _stcspr = StCSPR::load_or_deploy(
             &env,
             NoArgs,
             container,
-            350_000_000_000 // Adjust gas limit as needed
+            100_000_000_000
+        )?;
+
+        // Deploy cUSD stablecoin
+        let _cusd = CasperUSD::load_or_deploy(
+            &env,
+            NoArgs,
+            container,
+            100_000_000_000
+        )?;
+
+        // Deploy Oracle
+        let _oracle = PriceOracle::load_or_deploy(
+            &env,
+            NoArgs,
+            container,
+            100_000_000_000
         )?;
 
         Ok(())
     }
 }
 
-/// Scenario that flips the state of the deployed `Flipper` contract a specified number of times.
-pub struct FlippingScenario;
-
-impl Scenario for FlippingScenario {
-    fn args(&self) -> Vec<CommandArg> {
-        vec![CommandArg::new(
-            "number",
-            "The number of times to flip the state",
-            NamedCLType::U64,
-        )]
-    }
-
-    fn run(
-        &self,
-        env: &HostEnv,
-        container: &DeployedContractsContainer,
-        args: Args
-    ) -> Result<(), Error> {
-        let mut contract = container.contract_ref::<Flipper>(env)?;
-        let n = args.get_single::<u64>("name")?;
-
-        env.set_gas(50_000_000);
-        for _ in 0..n {
-            contract.try_flip()?;
-        }
-
-        Ok(())
-    }
-}
-
-impl ScenarioMetadata for FlippingScenario {
-    const NAME: &'static str = "flip";
-    const DESCRIPTION: &'static str =
-        "Flips the state of the deployed flipper contract a specified number of times";
-}
-
-/// Main function to run the CLI tool.
 pub fn main() {
     OdraCli::new()
-        .about("CLI tool for casper_usd smart contract")
-        .deploy(FlipperDeployScript)
-        .contract::<Flipper>()
-        .scenario(FlippingScenario)
+        .about("CLI tool for CasperUSD protocol")
+        .deploy(CasperUSDDeployScript)
+        .contract::<StCSPR>()
+        .contract::<CasperUSD>()
+        .contract::<PriceOracle>()
         .build()
         .run();
 }
