@@ -19,8 +19,8 @@ const SECRET_KEY_PATH = path.join(__dirname, '..', 'casper-wallet-secret_keys (1
 const WASM_DIR = path.join(__dirname, '..', 'casper-usd', 'wasm');
 
 // Gas amounts in motes (1 CSPR = 1,000,000,000 motes)
-const GAS_SIMPLE = 50_000_000_000n;  // 50 CSPR for simple contracts
-const GAS_COMPLEX = 75_000_000_000n; // 75 CSPR for complex contracts
+const GAS_SIMPLE = 150_000_000_000n;  // 150 CSPR for simple contracts
+const GAS_COMPLEX = 200_000_000_000n; // 200 CSPR for complex contracts
 
 async function loadKeys() {
   // Try Secp256K1 first (EC key), then Ed25519
