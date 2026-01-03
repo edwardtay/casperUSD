@@ -7,7 +7,7 @@ function App() {
   const [interestRate, setInterestRate] = useState('5.0')
   const [wallet, setWallet] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
-  const [tab, setTab] = useState<'borrow' | 'pool'>('borrow')
+  const [tab, setTab] = useState<'faucet' | 'borrow' | 'pool'>('faucet')
   const [poolDeposit, setPoolDeposit] = useState('')
 
   const STAKING_APY = 10.5
@@ -98,6 +98,14 @@ function App() {
         {/* Tabs */}
         <div className="flex gap-2 mb-4">
           <button
+            onClick={() => setTab('faucet')}
+            className={`flex-1 py-2 rounded-lg font-medium transition ${
+              tab === 'faucet' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-400'
+            }`}
+          >
+            🚰 Faucet
+          </button>
+          <button
             onClick={() => setTab('borrow')}
             className={`flex-1 py-2 rounded-lg font-medium transition ${
               tab === 'borrow' ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-400'
@@ -108,14 +116,82 @@ function App() {
           <button
             onClick={() => setTab('pool')}
             className={`flex-1 py-2 rounded-lg font-medium transition ${
-              tab === 'pool' ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-400'
+              tab === 'pool' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
             }`}
           >
-            Stability Pool
+            Pool
           </button>
         </div>
 
-        {tab === 'borrow' ? (
+        {tab === 'faucet' ? (
+          /* Faucet Tab */
+          <div className="bg-slate-800 rounded-xl p-5 space-y-5">
+            <div className="text-center mb-4">
+              <h2 className="text-xl font-bold mb-2">Get Testnet Tokens</h2>
+              <p className="text-sm text-slate-400">You need tokens to test the protocol</p>
+            </div>
+
+            {/* Step 1: CSPR */}
+            <div className="bg-slate-700/50 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="bg-purple-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">1</span>
+                <span className="font-medium">Get Testnet CSPR</span>
+              </div>
+              <p className="text-sm text-slate-400 mb-3">Native gas token for transactions</p>
+              <a
+                href="https://testnet.cspr.live/tools/faucet"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full bg-purple-500 hover:bg-purple-600 text-center rounded-lg py-2 font-medium transition"
+              >
+                Open CSPR Faucet ↗
+              </a>
+            </div>
+
+            {/* Step 2: stCSPR */}
+            <div className="bg-slate-700/50 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="bg-emerald-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                <span className="font-medium">Get Test stCSPR</span>
+              </div>
+              <p className="text-sm text-slate-400 mb-3">Liquid staking token used as collateral (10,000 per claim, 1hr cooldown)</p>
+              {wallet ? (
+                <button
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 rounded-lg py-2 font-medium transition"
+                  onClick={() => alert('Calling stCSPR.faucet() - Contract interaction coming soon')}
+                >
+                  Claim 10,000 stCSPR
+                </button>
+              ) : (
+                <button
+                  onClick={connectWallet}
+                  className="w-full bg-slate-600 hover:bg-slate-500 rounded-lg py-2 font-medium transition"
+                >
+                  Connect Wallet First
+                </button>
+              )}
+            </div>
+
+            {/* Info */}
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 text-sm">
+              <p className="text-slate-300 mb-2"><strong>How it works:</strong></p>
+              <ol className="text-slate-400 space-y-1 list-decimal list-inside">
+                <li>Get testnet CSPR from official faucet</li>
+                <li>Claim stCSPR from our faucet contract</li>
+                <li>Deposit stCSPR as collateral</li>
+                <li>Borrow cUSD stablecoin</li>
+              </ol>
+            </div>
+
+            {wallet && (
+              <div className="text-center">
+                <button onClick={disconnect} className="text-slate-400 text-sm hover:text-white">
+                  {wallet.slice(0, 8)}...{wallet.slice(-6)} • Disconnect
+                </button>
+              </div>
+            )}
+          </div>
+        ) : tab === 'borrow' ? (
           <div className="bg-slate-800 rounded-xl p-5 space-y-5">
             {/* Collateral Input */}
             <div>
@@ -228,7 +304,6 @@ function App() {
             )}
           </div>
         ) : (
-          /* Stability Pool Tab */
           <div className="bg-slate-800 rounded-xl p-5 space-y-5">
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
               <h3 className="font-medium mb-2">Earn Real Yield</h3>
