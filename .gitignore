@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+target/
+
+# Build outputs
+dist/
+*.wasm
+casper-usd/wasm/
+
+# Environment & Secrets - NEVER COMMIT
+.env
+.env.*
+!.env.example
+*.pem
+*_secret_key*
+*secret*key*
+*.key
+
+# IDE
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Casper/Odra
+casper-usd/target/
+contracts_old/
+
+# Misc
+*.bak
+*.tmp

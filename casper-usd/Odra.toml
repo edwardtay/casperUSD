@@ -1,0 +1,8 @@
+[[contracts]]
+fqn = "casper_usd::mock_stcspr::MockStCSPR"
+
+[[contracts]]
+fqn = "casper_usd::stablecoin::CasperUSD"
+
+[[contracts]]
+fqn = "casper_usd::vault::Vault"
