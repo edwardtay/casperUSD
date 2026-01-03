@@ -15,6 +15,7 @@ casper-usd/wasm/
 *_secret_key*
 *secret*key*
 *.key
+casper-wallet-secret_keys*/
 
 # IDE
 .DS_Store

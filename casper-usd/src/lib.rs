@@ -14,4 +14,4 @@ pub mod oracle;
 pub mod stablecoin;
 pub mod trove_manager;
 pub mod stability_pool;
-pub mod stcspr;
+pub mod mock_stcspr;

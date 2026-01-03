@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Configuration
 const RPC_URL = 'https://node.testnet.casper.network/rpc';
 const CHAIN_NAME = 'casper-test';
-const SECRET_KEY_PATH = path.join(__dirname, '..', 'Account 1_secret_key.pem');
+const SECRET_KEY_PATH = path.join(__dirname, '..', 'casper-wallet-secret_keys (1)', 'Account 4_secret_key.pem');
 const WASM_DIR = path.join(__dirname, '..', 'casper-usd', 'wasm');
 
 // Gas amounts in motes (1 CSPR = 1,000,000,000 motes)
@@ -134,11 +134,10 @@ async function main() {
   const deployHashes = {};
   const contracts = [
     { name: 'MockStCSPR', wasm: 'MockStCSPR.wasm', gas: GAS_SIMPLE },
-    // Deploy these after getting more testnet CSPR:
-    // { name: 'CasperUSD', wasm: 'CasperUSD.wasm', gas: GAS_SIMPLE },
-    // { name: 'PriceOracle', wasm: 'PriceOracle.wasm', gas: GAS_SIMPLE },
-    // { name: 'TroveManager', wasm: 'TroveManager.wasm', gas: GAS_COMPLEX },
-    // { name: 'StabilityPool', wasm: 'StabilityPool.wasm', gas: GAS_COMPLEX },
+    { name: 'CasperUSD', wasm: 'CasperUSD.wasm', gas: GAS_SIMPLE },
+    { name: 'PriceOracle', wasm: 'PriceOracle.wasm', gas: GAS_SIMPLE },
+    { name: 'TroveManager', wasm: 'TroveManager.wasm', gas: GAS_COMPLEX },
+    { name: 'StabilityPool', wasm: 'StabilityPool.wasm', gas: GAS_COMPLEX },
   ];
   
   // Deploy all contracts

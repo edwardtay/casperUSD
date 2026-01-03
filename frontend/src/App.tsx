@@ -298,9 +298,12 @@ function App() {
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex justify-between items-start mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">CasperUSD</h1>
-            <p className="text-slate-400 text-sm">LST-backed stablecoin protocol</p>
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="CasperUSD" className="w-10 h-10 rounded-lg" />
+            <div>
+              <h1 className="text-2xl font-bold">CasperUSD</h1>
+              <p className="text-slate-400 text-sm">LST-backed stablecoin protocol</p>
+            </div>
           </div>
           <div className="text-right">
             <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-1 rounded">Testnet</span>

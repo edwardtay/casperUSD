@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const RPC_URL = 'https://node.testnet.casper.network/rpc';
-const SECRET_KEY_PATH = path.join(__dirname, '..', 'Account 1_secret_key.pem');
+const SECRET_KEY_PATH = path.join(__dirname, '..', 'casper-wallet-secret_keys (1)', 'Account 4_secret_key.pem');
 
 async function main() {
   console.log('=== Getting Contract Hashes ===\n');
