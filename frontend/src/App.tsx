@@ -1,4 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { CasperClient, DeployUtil, RuntimeArgs, CLPublicKey, CLValueBuilder } from 'casper-js-sdk'
+
+// Contract hashes - UPDATE AFTER DEPLOYMENT
+const CONTRACTS = {
+  stcspr: 'hash-0000000000000000000000000000000000000000000000000000000000000000',
+  cusd: 'hash-0000000000000000000000000000000000000000000000000000000000000000',
+  troveManager: 'hash-0000000000000000000000000000000000000000000000000000000000000000',
+  stabilityPool: 'hash-0000000000000000000000000000000000000000000000000000000000000000',
+  oracle: 'hash-0000000000000000000000000000000000000000000000000000000000000000',
+}
+
+const RPC_URL = 'https://rpc.testnet.casperlabs.io/rpc'
+const CHAIN_NAME = 'casper-test'
 
 function App() {
   const [csprPrice, setCsprPrice] = useState(0.05)
@@ -9,11 +22,16 @@ function App() {
   const [connecting, setConnecting] = useState(false)
   const [tab, setTab] = useState<'faucet' | 'borrow' | 'pool'>('faucet')
   const [poolDeposit, setPoolDeposit] = useState('')
+  const [txPending, setTxPending] = useState(false)
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [balances, setBalances] = useState({ stcspr: 0, cusd: 0 })
 
   const STAKING_APY = 10.5
   const MIN_RATIO = 150
   const LIQUIDATION_RATIO = 110
+  const DECIMALS = 1_000_000_000
 
+  // Fetch CSPR price
   useEffect(() => {
     fetch('https://api.coingecko.com/api/v3/simple/price?ids=casper-network&vs_currencies=usd')
       .then(res => res.json())
@@ -21,6 +39,25 @@ function App() {
       .catch(() => {})
   }, [])
 
+  // Fetch balances when wallet connected
+  const fetchBalances = useCallback(async () => {
+    if (!wallet) return
+    try {
+      const client = new CasperClient(RPC_URL)
+      // Query stCSPR balance
+      const stateRootHash = await client.nodeClient.getStateRootHash()
+      // In production, query contract state here
+      // For now, we'll update after successful faucet tx
+    } catch (err) {
+      console.error('Failed to fetch balances:', err)
+    }
+  }, [wallet])
+
+  useEffect(() => {
+    if (wallet) fetchBalances()
+  }, [wallet, fetchBalances])
+
+  // Connect wallet
   const connectWallet = async () => {
     setConnecting(true)
     try {
@@ -46,6 +83,186 @@ function App() {
     const casperWallet = (window as any).CasperWalletProvider?.()
     casperWallet?.disconnectFromSite?.()
     setWallet(null)
+    setBalances({ stcspr: 0, cusd: 0 })
+  }
+
+  // Sign and send deploy
+  const signAndSend = async (deploy: DeployUtil.Deploy): Promise<string> => {
+    const casperWallet = (window as any).CasperWalletProvider?.()
+    if (!casperWallet) throw new Error('Wallet not connected')
+
+    const deployJson = DeployUtil.deployToJson(deploy)
+    const signature = await casperWallet.sign(JSON.stringify(deployJson), wallet)
+    
+    const signedDeploy = DeployUtil.setSignature(
+      deploy,
+      signature.signature,
+      CLPublicKey.fromHex(wallet!)
+    )
+
+    const client = new CasperClient(RPC_URL)
+    const result = await client.putDeploy(signedDeploy)
+    return result
+  }
+
+  // Call stCSPR faucet
+  const claimStCSPR = async () => {
+    if (!wallet) return
+    setTxPending(true)
+    setTxHash(null)
+
+    try {
+      const client = new CasperClient(RPC_URL)
+      const publicKey = CLPublicKey.fromHex(wallet)
+
+      const deploy = DeployUtil.makeDeploy(
+        new DeployUtil.DeployParams(publicKey, CHAIN_NAME),
+        DeployUtil.ExecutableDeployItem.newStoredContractByHash(
+          Uint8Array.from(Buffer.from(CONTRACTS.stcspr.replace('hash-', ''), 'hex')),
+          'faucet',
+          RuntimeArgs.fromMap({})
+        ),
+        DeployUtil.standardPayment(3_000_000_000) // 3 CSPR gas
+      )
+
+      const hash = await signAndSend(deploy)
+      setTxHash(hash)
+      
+      // Update balance after delay
+      setTimeout(() => {
+        setBalances(prev => ({ ...prev, stcspr: prev.stcspr + 10000 }))
+        fetchBalances()
+      }, 30000)
+
+    } catch (err: any) {
+      console.error('Faucet failed:', err)
+      alert(`Transaction failed: ${err.message || err}`)
+    } finally {
+      setTxPending(false)
+    }
+  }
+
+  // Open Trove (deposit collateral + borrow)
+  const openTrove = async () => {
+    if (!wallet) return
+    const collateralAmount = Math.floor(parseFloat(collateral) * DECIMALS)
+    const borrowAmount = Math.floor(parseFloat(borrow) * DECIMALS)
+    const rate = Math.floor(parseFloat(interestRate) * DECIMALS / 100)
+
+    if (collateralAmount <= 0 || borrowAmount <= 0) {
+      alert('Enter valid amounts')
+      return
+    }
+
+    setTxPending(true)
+    setTxHash(null)
+
+    try {
+      const publicKey = CLPublicKey.fromHex(wallet)
+
+      // First approve stCSPR spending
+      const approveDeploy = DeployUtil.makeDeploy(
+        new DeployUtil.DeployParams(publicKey, CHAIN_NAME),
+        DeployUtil.ExecutableDeployItem.newStoredContractByHash(
+          Uint8Array.from(Buffer.from(CONTRACTS.stcspr.replace('hash-', ''), 'hex')),
+          'approve',
+          RuntimeArgs.fromMap({
+            spender: CLValueBuilder.key(
+              CLValueBuilder.byteArray(Buffer.from(CONTRACTS.troveManager.replace('hash-', ''), 'hex'))
+            ),
+            amount: CLValueBuilder.u64(collateralAmount),
+          })
+        ),
+        DeployUtil.standardPayment(2_000_000_000)
+      )
+
+      await signAndSend(approveDeploy)
+
+      // Wait for approval to process
+      await new Promise(r => setTimeout(r, 30000))
+
+      // Open trove
+      const troveDeploy = DeployUtil.makeDeploy(
+        new DeployUtil.DeployParams(publicKey, CHAIN_NAME),
+        DeployUtil.ExecutableDeployItem.newStoredContractByHash(
+          Uint8Array.from(Buffer.from(CONTRACTS.troveManager.replace('hash-', ''), 'hex')),
+          'open_trove',
+          RuntimeArgs.fromMap({
+            collateral: CLValueBuilder.u64(collateralAmount),
+            debt: CLValueBuilder.u64(borrowAmount),
+            interest_rate: CLValueBuilder.u64(rate),
+          })
+        ),
+        DeployUtil.standardPayment(5_000_000_000)
+      )
+
+      const hash = await signAndSend(troveDeploy)
+      setTxHash(hash)
+
+    } catch (err: any) {
+      console.error('Open trove failed:', err)
+      alert(`Transaction failed: ${err.message || err}`)
+    } finally {
+      setTxPending(false)
+    }
+  }
+
+  // Deposit to Stability Pool
+  const depositToPool = async () => {
+    if (!wallet) return
+    const amount = Math.floor(parseFloat(poolDeposit) * DECIMALS)
+    if (amount <= 0) {
+      alert('Enter valid amount')
+      return
+    }
+
+    setTxPending(true)
+    setTxHash(null)
+
+    try {
+      const publicKey = CLPublicKey.fromHex(wallet)
+
+      // Approve cUSD spending
+      const approveDeploy = DeployUtil.makeDeploy(
+        new DeployUtil.DeployParams(publicKey, CHAIN_NAME),
+        DeployUtil.ExecutableDeployItem.newStoredContractByHash(
+          Uint8Array.from(Buffer.from(CONTRACTS.cusd.replace('hash-', ''), 'hex')),
+          'approve',
+          RuntimeArgs.fromMap({
+            spender: CLValueBuilder.key(
+              CLValueBuilder.byteArray(Buffer.from(CONTRACTS.stabilityPool.replace('hash-', ''), 'hex'))
+            ),
+            amount: CLValueBuilder.u64(amount),
+          })
+        ),
+        DeployUtil.standardPayment(2_000_000_000)
+      )
+
+      await signAndSend(approveDeploy)
+      await new Promise(r => setTimeout(r, 30000))
+
+      // Deposit
+      const depositDeploy = DeployUtil.makeDeploy(
+        new DeployUtil.DeployParams(publicKey, CHAIN_NAME),
+        DeployUtil.ExecutableDeployItem.newStoredContractByHash(
+          Uint8Array.from(Buffer.from(CONTRACTS.stabilityPool.replace('hash-', ''), 'hex')),
+          'deposit',
+          RuntimeArgs.fromMap({
+            amount: CLValueBuilder.u64(amount),
+          })
+        ),
+        DeployUtil.standardPayment(3_000_000_000)
+      )
+
+      const hash = await signAndSend(depositDeploy)
+      setTxHash(hash)
+
+    } catch (err: any) {
+      console.error('Deposit failed:', err)
+      alert(`Transaction failed: ${err.message || err}`)
+    } finally {
+      setTxPending(false)
+    }
   }
 
   const collateralNum = parseFloat(collateral) || 0
@@ -58,6 +275,8 @@ function App() {
   const yearlyRewards = collateralNum * (STAKING_APY / 100) * csprPrice
   const netYield = yearlyRewards - yearlyInterest
   const liquidationPrice = borrowNum > 0 ? (borrowNum * LIQUIDATION_RATIO / 100) / collateralNum : 0
+
+  const contractsDeployed = !CONTRACTS.stcspr.includes('0000000000')
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8">
@@ -74,67 +293,86 @@ function App() {
           </div>
         </div>
 
+        {/* Balances */}
+        {wallet && (
+          <div className="bg-slate-800 rounded-lg p-3 mb-4 flex justify-between text-sm">
+            <div>
+              <span className="text-slate-400">stCSPR:</span>{' '}
+              <span className="font-mono">{balances.stcspr.toLocaleString()}</span>
+            </div>
+            <div>
+              <span className="text-slate-400">cUSD:</span>{' '}
+              <span className="font-mono text-emerald-400">${balances.cusd.toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Contract Status Warning */}
+        {!contractsDeployed && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4 text-sm text-red-400">
+            ⚠️ Contracts not yet deployed. Update CONTRACTS in App.tsx after deployment.
+          </div>
+        )}
+
+        {/* TX Status */}
+        {txHash && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 mb-4 text-sm">
+            <div className="text-emerald-400 mb-1">Transaction submitted!</div>
+            <a 
+              href={`https://testnet.cspr.live/deploy/${txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:underline break-all"
+            >
+              View on explorer: {txHash.slice(0, 16)}...
+            </a>
+          </div>
+        )}
+
         {/* Value Prop */}
         <div className="bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-emerald-500/20 rounded-xl p-4 mb-6">
           <div className="grid grid-cols-3 gap-4 text-center text-sm">
             <div>
               <div className="text-slate-400">Staking APY</div>
               <div className="text-emerald-400 font-bold text-lg">{STAKING_APY}%</div>
-              <div className="text-xs text-slate-500">Keep earning</div>
             </div>
             <div>
               <div className="text-slate-400">Min Ratio</div>
               <div className="font-bold text-lg">{MIN_RATIO}%</div>
-              <div className="text-xs text-slate-500">Collateral</div>
             </div>
             <div>
               <div className="text-slate-400">Liquidation</div>
               <div className="text-red-400 font-bold text-lg">{LIQUIDATION_RATIO}%</div>
-              <div className="text-xs text-slate-500">Threshold</div>
             </div>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => setTab('faucet')}
-            className={`flex-1 py-2 rounded-lg font-medium transition ${
-              tab === 'faucet' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-400'
-            }`}
-          >
-            🚰 Faucet
-          </button>
-          <button
-            onClick={() => setTab('borrow')}
-            className={`flex-1 py-2 rounded-lg font-medium transition ${
-              tab === 'borrow' ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-400'
-            }`}
-          >
-            Borrow
-          </button>
-          <button
-            onClick={() => setTab('pool')}
-            className={`flex-1 py-2 rounded-lg font-medium transition ${
-              tab === 'pool' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
-            }`}
-          >
-            Pool
-          </button>
+          {(['faucet', 'borrow', 'pool'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 py-2 rounded-lg font-medium transition capitalize ${
+                tab === t 
+                  ? t === 'faucet' ? 'bg-purple-500' : t === 'borrow' ? 'bg-emerald-500' : 'bg-blue-500'
+                  : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              {t === 'faucet' ? '🚰 Faucet' : t}
+            </button>
+          ))}
         </div>
 
-        {tab === 'faucet' ? (
-          /* Faucet Tab */
+        {tab === 'faucet' && (
           <div className="bg-slate-800 rounded-xl p-5 space-y-5">
             <div className="text-center mb-4">
               <h2 className="text-xl font-bold mb-2">Get Testnet Tokens</h2>
-              <p className="text-sm text-slate-400">You need tokens to test the protocol</p>
             </div>
 
-            {/* Step 1: CSPR */}
             <div className="bg-slate-700/50 rounded-lg p-4">
               <div className="flex items-center gap-3 mb-3">
-                <span className="bg-purple-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">1</span>
+                <span className="bg-purple-500 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">1</span>
                 <span className="font-medium">Get Testnet CSPR</span>
               </div>
               <p className="text-sm text-slate-400 mb-3">Native gas token for transactions</p>
@@ -148,52 +386,37 @@ function App() {
               </a>
             </div>
 
-            {/* Step 2: stCSPR */}
             <div className="bg-slate-700/50 rounded-lg p-4">
               <div className="flex items-center gap-3 mb-3">
-                <span className="bg-emerald-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                <span className="bg-emerald-500 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">2</span>
                 <span className="font-medium">Get Test stCSPR</span>
               </div>
-              <p className="text-sm text-slate-400 mb-3">Liquid staking token used as collateral (10,000 per claim, 1hr cooldown)</p>
+              <p className="text-sm text-slate-400 mb-3">10,000 stCSPR per claim (1hr cooldown)</p>
               {wallet ? (
                 <button
-                  className="w-full bg-emerald-500 hover:bg-emerald-600 rounded-lg py-2 font-medium transition"
-                  onClick={() => alert('Calling stCSPR.faucet() - Contract interaction coming soon')}
+                  onClick={claimStCSPR}
+                  disabled={txPending || !contractsDeployed}
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg py-2 font-medium transition"
                 >
-                  Claim 10,000 stCSPR
+                  {txPending ? 'Submitting...' : 'Claim 10,000 stCSPR'}
                 </button>
               ) : (
-                <button
-                  onClick={connectWallet}
-                  className="w-full bg-slate-600 hover:bg-slate-500 rounded-lg py-2 font-medium transition"
-                >
-                  Connect Wallet First
+                <button onClick={connectWallet} disabled={connecting} className="w-full bg-slate-600 hover:bg-slate-500 rounded-lg py-2 font-medium transition">
+                  {connecting ? 'Connecting...' : 'Connect Wallet First'}
                 </button>
               )}
             </div>
 
-            {/* Info */}
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 text-sm">
-              <p className="text-slate-300 mb-2"><strong>How it works:</strong></p>
-              <ol className="text-slate-400 space-y-1 list-decimal list-inside">
-                <li>Get testnet CSPR from official faucet</li>
-                <li>Claim stCSPR from our faucet contract</li>
-                <li>Deposit stCSPR as collateral</li>
-                <li>Borrow cUSD stablecoin</li>
-              </ol>
-            </div>
-
             {wallet && (
-              <div className="text-center">
-                <button onClick={disconnect} className="text-slate-400 text-sm hover:text-white">
-                  {wallet.slice(0, 8)}...{wallet.slice(-6)} • Disconnect
-                </button>
-              </div>
+              <button onClick={disconnect} className="w-full text-slate-400 text-sm hover:text-white">
+                {wallet.slice(0, 8)}...{wallet.slice(-6)} • Disconnect
+              </button>
             )}
           </div>
-        ) : tab === 'borrow' ? (
+        )}
+
+        {tab === 'borrow' && (
           <div className="bg-slate-800 rounded-xl p-5 space-y-5">
-            {/* Collateral Input */}
             <div>
               <label className="text-sm text-slate-400 block mb-2">Deposit stCSPR Collateral</label>
               <input
@@ -205,13 +428,10 @@ function App() {
               />
               <div className="flex justify-between text-xs text-slate-500 mt-1">
                 <span>≈ ${collateralValue.toFixed(2)}</span>
-                {collateralNum > 0 && (
-                  <span className="text-emerald-400">Earns ${yearlyRewards.toFixed(2)}/yr staking</span>
-                )}
+                <span>Balance: {balances.stcspr.toLocaleString()}</span>
               </div>
             </div>
 
-            {/* Borrow Input */}
             <div>
               <label className="text-sm text-slate-400 block mb-2">Borrow cUSD</label>
               <input
@@ -221,13 +441,12 @@ function App() {
                 placeholder="0"
                 className="w-full bg-slate-700 rounded-lg px-4 py-3 text-lg outline-none focus:ring-2 focus:ring-emerald-500"
               />
-              <p className="text-xs text-slate-500 mt-1">Max: ${maxBorrow} at {MIN_RATIO}% ratio</p>
+              <p className="text-xs text-slate-500 mt-1">Max: ${maxBorrow}</p>
             </div>
 
-            {/* Interest Rate - User Set (Liquity V2 style) */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-sm text-slate-400">Your Interest Rate</label>
+                <label className="text-sm text-slate-400">Interest Rate (you set)</label>
                 <span className="text-xs text-slate-500">Lower = higher redemption risk</span>
               </div>
               <div className="flex items-center gap-3">
@@ -240,24 +459,17 @@ function App() {
                   onChange={e => setInterestRate(e.target.value)}
                   className="flex-1 accent-emerald-500"
                 />
-                <div className="bg-slate-700 px-3 py-1 rounded-lg min-w-[70px] text-center">
-                  <span className="font-mono font-bold">{rateNum}%</span>
+                <div className="bg-slate-700 px-3 py-1 rounded-lg min-w-[70px] text-center font-mono font-bold">
+                  {rateNum}%
                 </div>
-              </div>
-              <div className="flex justify-between text-xs mt-1">
-                <span className="text-emerald-400">0.5% (high risk)</span>
-                <span className="text-slate-500">20% (safe)</span>
               </div>
             </div>
 
-            {/* Position Summary */}
             {borrowNum > 0 && (
               <div className="bg-slate-700/50 rounded-lg p-4 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Collateral Ratio</span>
-                  <span className={ratio >= MIN_RATIO ? 'text-emerald-400' : 'text-red-400'}>
-                    {ratio.toFixed(0)}%
-                  </span>
+                  <span className={ratio >= MIN_RATIO ? 'text-emerald-400' : 'text-red-400'}>{ratio.toFixed(0)}%</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Liquidation Price</span>
@@ -272,7 +484,7 @@ function App() {
                   <span className="text-emerald-400">+${yearlyRewards.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between border-t border-slate-600 pt-2">
-                  <span className="text-slate-300 font-medium">Net Yield</span>
+                  <span className="font-medium">Net Yield</span>
                   <span className={netYield >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
                     {netYield >= 0 ? '+' : ''}${netYield.toFixed(2)}/yr
                   </span>
@@ -280,35 +492,33 @@ function App() {
               </div>
             )}
 
-            {/* Action Button */}
             {wallet ? (
               <div className="space-y-3">
                 <button 
-                  disabled={ratio < MIN_RATIO || borrowNum === 0}
+                  onClick={openTrove}
+                  disabled={ratio < MIN_RATIO || borrowNum === 0 || txPending || !contractsDeployed}
                   className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg py-3 font-medium transition"
                 >
-                  {ratio < MIN_RATIO && borrowNum > 0 ? 'Ratio too low' : 'Open Trove'}
+                  {txPending ? 'Submitting...' : ratio < MIN_RATIO && borrowNum > 0 ? 'Ratio too low' : 'Open Trove'}
                 </button>
                 <button onClick={disconnect} className="w-full text-slate-400 text-sm hover:text-white">
                   {wallet.slice(0, 8)}...{wallet.slice(-6)} • Disconnect
                 </button>
               </div>
             ) : (
-              <button 
-                onClick={connectWallet}
-                disabled={connecting}
-                className="w-full bg-emerald-500 hover:bg-emerald-600 rounded-lg py-3 font-medium transition disabled:opacity-50"
-              >
+              <button onClick={connectWallet} disabled={connecting} className="w-full bg-emerald-500 hover:bg-emerald-600 rounded-lg py-3 font-medium transition disabled:opacity-50">
                 {connecting ? 'Connecting...' : 'Connect Wallet'}
               </button>
             )}
           </div>
-        ) : (
+        )}
+
+        {tab === 'pool' && (
           <div className="bg-slate-800 rounded-xl p-5 space-y-5">
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
               <h3 className="font-medium mb-2">Earn Real Yield</h3>
               <p className="text-sm text-slate-400">
-                Deposit cUSD to absorb liquidations. Earn collateral at ~10% discount + share of protocol interest.
+                Deposit cUSD to absorb liquidations. Earn collateral at discount + protocol interest.
               </p>
             </div>
 
@@ -321,6 +531,7 @@ function App() {
                 placeholder="0"
                 className="w-full bg-slate-700 rounded-lg px-4 py-3 text-lg outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <p className="text-xs text-slate-500 mt-1">Balance: {balances.cusd.toLocaleString()} cUSD</p>
             </div>
 
             <div className="bg-slate-700/50 rounded-lg p-4 space-y-2 text-sm">
@@ -329,35 +540,29 @@ function App() {
                 <span>$0</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Your Share</span>
-                <span>0%</span>
-              </div>
-              <div className="flex justify-between">
                 <span className="text-slate-400">Est. APY</span>
                 <span className="text-emerald-400">~5-15%</span>
               </div>
             </div>
 
             {wallet ? (
-              <button className="w-full bg-blue-500 hover:bg-blue-600 rounded-lg py-3 font-medium transition">
-                Deposit to Pool
+              <button 
+                onClick={depositToPool}
+                disabled={txPending || !contractsDeployed || !poolDeposit}
+                className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg py-3 font-medium transition"
+              >
+                {txPending ? 'Submitting...' : 'Deposit to Pool'}
               </button>
             ) : (
-              <button 
-                onClick={connectWallet}
-                disabled={connecting}
-                className="w-full bg-blue-500 hover:bg-blue-600 rounded-lg py-3 font-medium transition disabled:opacity-50"
-              >
+              <button onClick={connectWallet} disabled={connecting} className="w-full bg-blue-500 hover:bg-blue-600 rounded-lg py-3 font-medium transition disabled:opacity-50">
                 {connecting ? 'Connecting...' : 'Connect Wallet'}
               </button>
             )}
           </div>
         )}
 
-        {/* Protocol Info */}
-        <div className="mt-6 text-xs text-slate-500 text-center space-y-1">
-          <p>Based on Liquity V2 design • User-set interest rates • TWAP Oracle</p>
-          <p>Contracts deployed on Casper Testnet</p>
+        <div className="mt-6 text-xs text-slate-500 text-center">
+          <p>Liquity V2 design • User-set rates • TWAP Oracle</p>
         </div>
       </div>
     </div>
