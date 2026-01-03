@@ -1,73 +1,72 @@
-# CasperUSD - LST-Collateralized Stablecoin
+# CasperUSD - LST-Backed Stablecoin Protocol
 
 > Borrow stablecoins against staked CSPR without unstaking — keep earning validator rewards while accessing DeFi liquidity.
 
 [![Built with Odra](https://img.shields.io/badge/Built%20with-Odra%20Framework-10B981)](https://odra.dev)
 [![Casper Network](https://img.shields.io/badge/Casper-Network-FF0012)](https://casper.network)
+[![Hackathon](https://img.shields.io/badge/Track-Liquid%20Staking-purple)](https://casper.network)
 
 ---
 
 ## ⚠️ Disclaimer
 
-**This is a Minimum Viable Product (MVP) for demonstration purposes.**
+**This is a hackathon MVP for demonstration purposes.**
 
-- Smart contracts are deployed on **Casper Testnet**
-- Market data (CSPR price, staking APY) is sourced from **Casper Mainnet** via CoinGecko API
-- This mirrors real-world conditions for accurate testing while using testnet tokens
-- **Do not use real funds** — testnet tokens have no monetary value
-- This software is provided "as-is" without warranty of any kind
+- Smart contracts deployed on **Casper Testnet**
+- Price data from **CoinGecko API** (real mainnet prices)
+- **Do not use real funds** — testnet tokens have no value
 - Not audited — use at your own risk
 
 ---
 
 ## 🎯 Problem
 
-**$12B+ CSPR is staked** on Casper Network, earning ~10% APY. But:
+**$12B+ CSPR is staked** on Casper Network earning ~10% APY, but:
 - Capital is **locked** in validators
 - To access liquidity, users must **unstake** (losing rewards)
 - Unbonding period creates **opportunity cost**
 
 ## 💡 Solution
 
-CasperUSD introduces **Collateralized Debt Positions (CDPs)** for liquid staking tokens:
+CasperUSD enables **Collateralized Debt Positions (CDPs)** against liquid staking tokens:
 
-| Feature | How It Works |
-|---------|--------------|
-| **Keep Earning** | Your CSPR stays staked in validators |
-| **Instant Liquidity** | Borrow cUSD stablecoin against stCSPR |
-| **No Unstaking** | Maintain delegation, keep rewards |
-| **Flexible Terms** | Repay anytime, reclaim collateral |
+| Feature | Benefit |
+|---------|---------|
+| **Keep Earning** | stCSPR stays staked, rewards continue |
+| **Instant Liquidity** | Borrow cUSD stablecoin immediately |
+| **User-Set Rates** | Choose your own interest rate (Liquity V2 design) |
+| **Capital Efficient** | 150% min collateral ratio |
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Frontend (React + TypeScript)                        │
-│              Real-time CoinGecko API • Inter Font                            │
-└─────────────────────────────────────┬───────────────────────────────────────┘
-                                      │
-┌───────────────┐      ┌───────────────┐      ┌───────────────┐
-│  PriceOracle  │◄────►│     Vault     │◄────►│   CasperUSD   │
-│    (TWAP)     │      │   (CDP Mgmt)  │      │ (cUSD CEP-18) │
-└───────────────┘      └───────┬───────┘      └───────────────┘
-                               │
-                        ┌──────▼──────┐
-                        │StabilityPool│
-                        └─────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              Frontend (React + TypeScript + Tailwind)        │
+│         Casper Wallet • Real-time CSPR Balance • CoinGecko   │
+└─────────────────────────────────┬───────────────────────────┘
+                                  │
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│ PriceOracle  │◄──│ TroveManager │──►│  CasperUSD   │
+│   (TWAP)     │   │    (CDPs)    │   │ (cUSD Token) │
+└──────────────┘   └──────┬───────┘   └──────────────┘
+                          │
+                   ┌──────▼───────┐
+                   │StabilityPool │
+                   │(Liquidations)│
+                   └──────────────┘
 ```
 
-### Testnet Deployment Strategy
+### Smart Contracts (Odra Framework)
 
-| Component | Network | Rationale |
-|-----------|---------|-----------|
-| Smart Contracts | **Testnet** | Safe testing environment |
-| Price Oracle Data | **Mainnet** | Real market prices for accurate simulation |
-| Staking APY | **Mainnet** | Reflects actual validator rewards |
-| User Balances | **Testnet** | Test tokens from faucet |
-
-This approach mirrors production conditions while ensuring no real assets are at risk.
+| Contract | Description |
+|----------|-------------|
+| `MockStCSPR` | Test LST token with faucet (10k per claim) |
+| `CasperUSD` | cUSD stablecoin (CEP-18 standard) |
+| `PriceOracle` | TWAP price feed with staleness checks |
+| `TroveManager` | CDP management, user-set interest rates |
+| `StabilityPool` | Liquidation absorption, real yield |
 
 ---
 
@@ -75,53 +74,11 @@ This approach mirrors production conditions while ensuring no real assets are at
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| Min Collateral Ratio | **150%** | Minimum to open/maintain vault |
-| Liquidation Threshold | **130%** | Below this, vault is liquidatable |
-| Stability Fee | **2% APY** | Annual interest on borrowed cUSD |
-| Liquidation Penalty | **10%** | Bonus to liquidators |
+| Min Collateral Ratio | **150%** | Required to open/maintain position |
+| Liquidation Threshold | **110%** | Below this triggers liquidation |
+| Interest Rate | **User-set** | Borrowers choose their rate |
+| Liquidation Penalty | **10%** | Bonus to stability pool |
 | TWAP Window | **6 hours** | Price averaging period |
-| Oracle Heartbeat | **1 hour** | Maximum price staleness |
-
----
-
-## 🛡️ Security Features
-
-- **TWAP Oracle**: 6-hour price averaging resists manipulation
-- **Price Deviation Bounds**: Rejects >10% price jumps
-- **Over-Collateralization**: 150% minimum buffer
-- **Decentralized Liquidations**: Stability pool absorbs bad debt
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Smart Contracts | [Odra Framework](https://odra.dev) (Rust → WASM) |
-| Token Standard | CEP-18 |
-| Frontend | React 18 + TypeScript + Tailwind |
-| Price Data | CoinGecko API (Live) |
-
-
----
-
-## 📁 Project Structure
-
-```
-lst-stablecoin/
-├── contracts/
-│   └── src/
-│       ├── vault.rs            # CDP management
-│       ├── stablecoin.rs       # cUSD CEP-18 token
-│       ├── oracle.rs           # TWAP price feed
-│       └── stability_pool.rs   # Liquidation pool
-├── frontend/
-│   └── src/
-│       └── App.tsx             # Full DeFi interface
-├── scripts/
-│   └── deploy.sh               # Deployment automation
-└── README.md
-```
 
 ---
 
@@ -132,61 +89,93 @@ lst-stablecoin/
 # Rust + WASM target
 rustup target add wasm32-unknown-unknown
 
-# Odra CLI
-cargo install cargo-odra
-
 # Node.js 18+
+node --version
 ```
 
-### Run Locally
+### Run Frontend
 ```bash
-# Frontend
 cd frontend
 npm install
 npm run dev
+# Open http://localhost:5173
+```
 
-# Contracts
-cd contracts
-cargo odra build
-cargo odra test
+### Build Contracts
+```bash
+cd casper-usd
+cargo build --release --target wasm32-unknown-unknown
 ```
 
 ### Deploy to Testnet
 ```bash
-# 1. Configure environment
-cp .env.example .env
-# Edit .env with your secret key path
-
-# 2. Get testnet CSPR from faucet
+# 1. Get testnet CSPR from faucet
 # https://testnet.cspr.live/tools/faucet
 
-# 3. Deploy
-./scripts/deploy.sh testnet
+# 2. Deploy contracts
+cd scripts
+npm install
+node deploy-contracts.mjs
+
+# 3. Check deploy status
+node check-deploy.mjs
+
+# 4. Get contract hashes (after deploys complete)
+node get-contract-hashes.mjs
 ```
 
 ---
 
 ## 🎮 User Flow
 
-1. **Connect Wallet** → CSPR.click integration
-2. **Deposit stCSPR** → Lock as collateral
-3. **Borrow cUSD** → Up to 66.7% of collateral value
-4. **Monitor Health Factor** → Stay above 1.0 to avoid liquidation
-5. **Repay & Withdraw** → Burn cUSD, reclaim collateral
+1. **Connect Wallet** → Casper Wallet extension
+2. **Get Test Tokens** → CSPR faucet + stCSPR claim
+3. **Open Trove** → Deposit stCSPR, borrow cUSD
+4. **Set Interest Rate** → Lower rate = higher redemption risk
+5. **Monitor Position** → Stay above 150% ratio
+6. **Earn in Pool** → Deposit cUSD for liquidation rewards
 
 ---
 
-## 📈 Roadmap
+## 📁 Project Structure
 
-- [x] Core vault mechanics
-- [x] CEP-18 cUSD token
-- [x] TWAP oracle
-- [x] Stability pool
-- [x] Real-time price integration
+```
+casperUSD/
+├── casper-usd/           # Smart contracts (Odra/Rust)
+│   ├── src/
+│   │   ├── trove_manager.rs    # CDP logic
+│   │   ├── stability_pool.rs   # Liquidations
+│   │   ├── oracle.rs           # TWAP price feed
+│   │   ├── stablecoin.rs       # cUSD token
+│   │   └── mock_stcspr.rs      # Test LST
+│   └── wasm/             # Compiled WASM
+├── frontend/             # React UI
+│   └── src/App.tsx       # Main application
+├── scripts/              # Deployment tools
+│   ├── deploy-contracts.mjs
+│   ├── check-deploy.mjs
+│   └── get-contract-hashes.mjs
+└── README.md
+```
 
-- [ ] Mainnet deployment
-- [ ] Multi-collateral support
-- [ ] Security audit
+---
+
+## 🛡️ Security Features
+
+- **TWAP Oracle**: 6-hour price averaging resists manipulation
+- **Price Deviation Bounds**: Rejects >10% sudden price jumps
+- **Over-Collateralization**: 150% minimum buffer
+- **Stability Pool**: Decentralized liquidation mechanism
+- **User-Set Rates**: Market-driven interest (Liquity V2)
+
+---
+
+## 🔗 Links
+
+- **Testnet Explorer**: [testnet.cspr.live](https://testnet.cspr.live)
+- **CSPR Faucet**: [testnet.cspr.live/tools/faucet](https://testnet.cspr.live/tools/faucet)
+- **Casper Wallet**: [casperwallet.io](https://www.casperwallet.io/)
+- **Odra Framework**: [odra.dev](https://odra.dev)
 
 ---
 
@@ -197,5 +186,5 @@ MIT
 ---
 
 <p align="center">
-  <strong>Built for the Casper ecosystem</strong>
+  <strong>Built for Casper Liquid Staking Hackathon</strong>
 </p>

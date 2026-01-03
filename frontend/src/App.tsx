@@ -10,7 +10,7 @@ const CONTRACTS = {
   oracle: 'hash-0000000000000000000000000000000000000000000000000000000000000000',
 }
 
-const RPC_URL = 'https://rpc.testnet.casperlabs.io/rpc'
+const RPC_URL = 'https://node.testnet.casper.network/rpc'
 const CHAIN_NAME = 'casper-test'
 
 function App() {
@@ -24,7 +24,7 @@ function App() {
   const [poolDeposit, setPoolDeposit] = useState('')
   const [txPending, setTxPending] = useState(false)
   const [txHash, setTxHash] = useState<string | null>(null)
-  const [balances, setBalances] = useState({ stcspr: 0, cusd: 0 })
+  const [balances, setBalances] = useState({ cspr: 0, stcspr: 0, cusd: 0 })
 
   const STAKING_APY = 10.5
   const MIN_RATIO = 150
@@ -43,11 +43,26 @@ function App() {
   const fetchBalances = useCallback(async () => {
     if (!wallet) return
     try {
-      const client = new CasperClient(RPC_URL)
-      // Query stCSPR balance
-      const stateRootHash = await client.nodeClient.getStateRootHash()
-      // In production, query contract state here
-      // For now, we'll update after successful faucet tx
+      // Fetch CSPR balance via RPC
+      const response = await fetch(RPC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'query_balance',
+          params: {
+            purse_identifier: {
+              main_purse_under_public_key: wallet
+            }
+          }
+        })
+      })
+      const data = await response.json()
+      if (data.result?.balance) {
+        const csprBalance = parseInt(data.result.balance) / DECIMALS
+        setBalances(prev => ({ ...prev, cspr: csprBalance }))
+      }
     } catch (err) {
       console.error('Failed to fetch balances:', err)
     }
@@ -83,7 +98,7 @@ function App() {
     const casperWallet = (window as any).CasperWalletProvider?.()
     casperWallet?.disconnectFromSite?.()
     setWallet(null)
-    setBalances({ stcspr: 0, cusd: 0 })
+    setBalances({ cspr: 0, stcspr: 0, cusd: 0 })
   }
 
   // Sign and send deploy
@@ -295,7 +310,11 @@ function App() {
 
         {/* Balances */}
         {wallet && (
-          <div className="bg-slate-800 rounded-lg p-3 mb-4 flex justify-between text-sm">
+          <div className="bg-slate-800 rounded-lg p-3 mb-4 grid grid-cols-3 gap-2 text-sm">
+            <div>
+              <span className="text-slate-400">CSPR:</span>{' '}
+              <span className="font-mono">{balances.cspr.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+            </div>
             <div>
               <span className="text-slate-400">stCSPR:</span>{' '}
               <span className="font-mono">{balances.stcspr.toLocaleString()}</span>
@@ -309,8 +328,15 @@ function App() {
 
         {/* Contract Status Warning */}
         {!contractsDeployed && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4 text-sm text-red-400">
-            ⚠️ Contracts not yet deployed. Update CONTRACTS in App.tsx after deployment.
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-4 text-sm">
+            <div className="text-amber-400 font-medium mb-1">⏳ Contracts Deploying...</div>
+            <p className="text-slate-400 text-xs">
+              Testnet deploys can take 5-10 minutes. Check status at{' '}
+              <a href="https://testnet.cspr.live/deploy/7a83406d24ab5075ece01f8ef1224b50b7dafe022362e39302890d737e46b8e5" 
+                 target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                explorer
+              </a>
+            </p>
           </div>
         )}
 

@@ -1,0 +1,7 @@
+{
+  "name": "casperusd-scripts",
+  "type": "module",
+  "dependencies": {
+    "casper-js-sdk": "^2.15.4"
+  }
+}
